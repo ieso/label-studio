@@ -35,4 +35,4 @@ stages:
         containerRegistry: $(_dockerRegistryServiceConnection)
         tags: |
           $(tag)
-          'latest'
+          latest
