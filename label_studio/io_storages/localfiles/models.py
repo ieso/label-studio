@@ -1,22 +1,27 @@
 """This file and its contents are licensed under the Apache License 2.0. Please see the included NOTICE for copyright information and LICENSE for a copy of the license.
 """
-import logging
 import json
-import re
+import logging
 import os
-
 from pathlib import Path
-from django.db import models, transaction
-from django.utils.translation import gettext_lazy as _
+import re
+
 from django.conf import settings
-from django.dispatch import receiver
+from django.db import models, transaction
 from django.db.models.signals import post_save
+from django.dispatch import receiver
+from django.utils.translation import gettext_lazy as _
+from rest_framework.exceptions import ValidationError
 
-from tasks.models import Annotation
-
-from io_storages.base_models import ImportStorage, ImportStorageLink, ExportStorage, ExportStorageLink
-from io_storages.serializers import StorageAnnotationSerializer
 from core.utils.params import get_env
+from io_storages.base_models import (
+      ExportStorage,
+      ExportStorageLink,
+      ImportStorage,
+      ImportStorageLink,
+)
+from io_storages.serializers import StorageAnnotationSerializer
+from tasks.models import Annotation
 
 logger = logging.getLogger(__name__)
 url_scheme = 'https'
@@ -33,8 +38,16 @@ class LocalFilesMixin(models.Model):
         _('use_blob_urls'), default=False,
         help_text='Interpret objects as BLOBs and generate URLs')
 
+    def validate_connection(self):
+        path = Path(self.path)
+        if not path.exists():
+            raise ValidationError(f'Path {self.path} does not exist')
+        if settings.LOCAL_FILES_SERVING_ENABLED is False:
+            raise ValidationError("Serving local files can be dangerous, so it's disabled by default. "
+                                  'You can enable it with LOCAL_FILES_SERVING_ENABLED environment variable')
 
-class LocalFilesImportStorage(ImportStorage, LocalFilesMixin):
+
+class LocalFilesImportStorage(LocalFilesMixin, ImportStorage):
 
     def iterkeys(self):
         path = Path(self.path)
@@ -50,12 +63,19 @@ class LocalFilesImportStorage(ImportStorage, LocalFilesMixin):
     def get_data(self, key):
         path = Path(key)
         if self.use_blob_urls:
-            # include self-hosted links pointed to local resources via /data/filename?d=<path/to/local/dir>
+            # include self-hosted links pointed to local resources via {settings.HOSTNAME}/data/local-files?d=<path/to/local/dir>
             document_root = Path(get_env('LOCAL_FILES_DOCUMENT_ROOT', default='/'))
             relative_path = str(path.relative_to(document_root))
-            return {settings.DATA_UNDEFINED_NAME: f'/data/local-files/?d={relative_path}'}
-        with open(path, encoding='utf8') as f:
-            value = json.load(f)
+            return {settings.DATA_UNDEFINED_NAME: f'{settings.HOSTNAME}/data/local-files/?d={relative_path}'}
+
+        try:
+            with open(path, encoding='utf8') as f:
+                value = json.load(f)
+        except (UnicodeDecodeError, json.decoder.JSONDecodeError):
+            raise ValueError(
+                f"Can\'t import JSON-formatted tasks from {key}. If you're trying to import binary objects, "
+                f"perhaps you've forgot to enable \"Treat every bucket object as a source file\" option?")
+
         if not isinstance(value, dict):
             raise ValueError(f"Error on key {key}: For {self.__class__.__name__} your JSON file must be a dictionary with one task.")  # noqa
         return value
@@ -68,7 +88,7 @@ class LocalFilesExportStorage(ExportStorage, LocalFilesMixin):
 
     def save_annotation(self, annotation):
         logger.debug(f'Creating new object on {self.__class__.__name__} Storage {self} for annotation {annotation}')
-        ser_annotation = StorageAnnotationSerializer(annotation).data
+        ser_annotation = self._get_serialized_data(annotation)
         with transaction.atomic():
             # Create export storage link
             link = LocalFilesExportStorageLink.create(annotation, self)

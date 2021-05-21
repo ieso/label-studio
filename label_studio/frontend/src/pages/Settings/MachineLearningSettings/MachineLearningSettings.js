@@ -111,9 +111,24 @@ export const MachineLearningSettings = () => {
       >
         <Form.Row columnCount={1}>
           <Label text="ML-Assisted Labeling" large/>
+
           <div style={{paddingLeft: 16}}>
             <Toggle
-              label="Display ML-predicted annotations when labeling"
+              label="Start model training after any annotations are submitted or updated"
+              name="start_training_on_annotation_update"
+            />
+          </div>
+
+          <div style={{paddingLeft: 16}}>
+            <Toggle
+              label="Retrieve predictions when loading a task automatically"
+              name="evaluate_predictions_automatically"
+            />
+          </div>
+
+          <div style={{paddingLeft: 16}}>
+            <Toggle
+              label="Show predictions to annotators in the Label Stream and Quick View"
               name="show_collab_predictions"
             />
           </div>

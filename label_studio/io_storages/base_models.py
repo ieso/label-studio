@@ -11,8 +11,11 @@ from django_rq import job
 
 from tasks.models import Task
 from tasks.serializers import PredictionSerializer, AnnotationSerializer
+from data_export.serializers import ExportDataSerializer
+
 
 from core.redis import redis_connected
+from core.utils.common import get_bool_env
 
 
 logger = logging.getLogger(__name__)
@@ -39,6 +42,11 @@ class Storage(models.Model):
 
     def validate_connection(self, client=None):
         pass
+
+    def has_permission(self, user):
+        if self.project.has_permission(user):
+            return True
+        return False
 
     class Meta:
         abstract = True
@@ -156,6 +164,15 @@ def sync_background(storage_class, storage_id):
 
 class ExportStorage(Storage):
 
+    def _get_serialized_data(self, annotation):
+        if get_bool_env('FUTURE_SAVE_TASK_TO_STORAGE', default=False):
+            # export task with annotations
+            return ExportDataSerializer(annotation.task).data
+        else:
+            from io_storages.serializers import StorageAnnotationSerializer
+            # deprecated functionality - save only annotation
+            return StorageAnnotationSerializer(annotation).data
+
     def save_annotation(self, annotation):
         raise NotImplementedError
 
@@ -180,6 +197,11 @@ class ImportStorageLink(models.Model):
         link, created = cls.objects.get_or_create(task_id=task.id, key=key, storage=storage, object_exists=True)
         return link
 
+    def has_permission(self, user):
+        if self.task.has_permission(user):
+            return True
+        return False
+
     class Meta:
         abstract = True
 
@@ -194,6 +216,8 @@ class ExportStorageLink(models.Model):
 
     @property
     def key(self):
+        if get_bool_env('FUTURE_SAVE_TASK_TO_STORAGE', default=False):
+            return str(self.annotation.task.id)
         return str(self.annotation.id)
 
     @classmethod
@@ -204,6 +228,11 @@ class ExportStorageLink(models.Model):
     def create(cls, annotation, storage):
         link, created = cls.objects.get_or_create(annotation=annotation, storage=storage, object_exists=True)
         return link
+
+    def has_permission(self, user):
+        if self.annotation.has_permission(user):
+            return True
+        return False
 
     class Meta:
         abstract = True
