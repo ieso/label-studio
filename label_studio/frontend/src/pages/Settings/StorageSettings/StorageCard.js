@@ -5,7 +5,14 @@ import { Space } from "../../../components/Space/Space";
 import { ApiContext } from "../../../providers/ApiProvider";
 import { StorageSummary } from "./StorageSummary";
 
-export const StorageCard = ({rootClass, target, storage, onEditStorage, onDeleteStorage}) => {
+export const StorageCard = ({
+  rootClass,
+  target,
+  storage,
+  onEditStorage,
+  onDeleteStorage,
+  storageTypes,
+}) => {
   const [syncing, setSyncing] = useState(false);
   const api = useContext(ApiContext);
   const [storageData, setStorageData] = useState({...storage});
@@ -15,6 +22,7 @@ export const StorageCard = ({rootClass, target, storage, onEditStorage, onDelete
     setSyncing(true);
     setSynced(null);
 
+    
     const result = await api.callApi('syncStorage', {
       params: {
         target,
@@ -51,25 +59,21 @@ export const StorageCard = ({rootClass, target, storage, onEditStorage, onDelete
     >
       <StorageSummary
         storage={storageData}
-        enableLastSync={target !== 'export'}
         className={rootClass.elem('summary')}
+        storageTypes={storageTypes}
       />
-
-      {target !== 'export' && (
-        <div className={rootClass.elem('sync')}>
-          <Space size="small">
-            <Button waiting={syncing} onClick={startSync}>
+      <div className={rootClass.elem('sync')}>
+        <Space size="small">
+          <Button waiting={syncing} onClick={startSync}>
               Sync Storage
-            </Button>
-
-            {synced !== null ? (
-              <div className={rootClass.elem('sync-count')}>
+          </Button>
+          {synced !== null ? (
+            <div className={rootClass.elem('sync-count')}>
                 Synced {synced} task(s)
-              </div>
-            ) : null}
-          </Space>
-        </div>
-      )}
+            </div>
+          ) : null}
+        </Space>
+      </div>
     </Card>
   );
 };

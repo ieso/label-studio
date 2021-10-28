@@ -18,6 +18,10 @@ jobs:
       COVERAGE_PROCESS_START: 1
       LOG_DIR: pytest_logs
       collect_analytics: false
+      SENTRY_ENVIRONMENT: tests-ubuntu-sqlite
+      SENTRY_RATE: 0
+      DJANGO_DB: sqlite
+      # SENTRY_DSN:
 
     steps:
       - uses: actions/checkout@v2
@@ -46,7 +50,7 @@ jobs:
       - name: Run functional tests
         run: |
           cd label_studio/
-          pytest --junitxml report.xml --cov=. -m "not integration_tests"
+          pytest --junitxml report.xml --cov=. -vv
 
   run_pytest_postgresql:
     name: LS PostgreSQL
@@ -59,6 +63,9 @@ jobs:
       LOG_LEVEL: ERROR
       LOG_DIR: pytest_logs
       collect_analytics: false
+      SENTRY_ENVIRONMENT: tests-ubuntu-postgresql
+      SENTRY_RATE: 0
+      # SENTRY_DSN:
 
     # Service containers to run with `container-job`
     services:
@@ -123,7 +130,7 @@ jobs:
       - name: Run functional tests
         run: |
           cd label_studio/
-          pytest --junitxml report.xml --cov=. -m "not integration_tests"
+          pytest --junitxml report.xml --cov=. -vv
 
       - name: "Upload coverage to Codecov"
         uses: codecov/codecov-action@v1
@@ -142,6 +149,10 @@ jobs:
       COVERAGE_PROCESS_START: 1
       LOG_DIR: pytest_logs
       collect_analytics: false
+      SENTRY_ENVIRONMENT: tests-windows-sqlite
+      SENTRY_RATE: 0
+      DJANGO_DB: sqlite
+      # SENTRY_DSN:
 
     steps:
     - uses: actions/checkout@v2
@@ -164,7 +175,7 @@ jobs:
       run: |
         set PYTHONIOENCODING=utf-8
         set PYTHONLEGACYWINDOWSSTDIO=utf-8
-        label-studio init my_project --agree-fix-sqlite
+        label-studio init my_project --agree-fix-sqlite --force-fix-sqlite
         label-studio init my_project --username test@test.com --password testpwd
         cp sqlite3.dll %pythonLocation%/DLLs/sqlite3.dll
       shell: cmd

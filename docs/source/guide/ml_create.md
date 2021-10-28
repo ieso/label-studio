@@ -3,7 +3,7 @@ title: Write your own ML backend
 type: guide
 order: 607
 meta_title: Machine Learning SDK
-meta_description: Label Studio Documentation for setting up your machine learning model to output and consume predictions in your machine learning and data science data labeling projects. 
+meta_description: Set up your machine learning model to output and consume predictions in your data science and data labeling projects. 
 ---
 
 Set up a machine learning model as a backend to Label Studio so that you can dynamically output and consume predictions as labeling occurs. You can follow this tutorial to wrap custom machine learning model code with the Label Studio ML SDK, or refer to [example ML backend tutorials](ml_tutorials.html) to integrate with popular machine learning frameworks such as PyTorch, GPT2, and others. 
@@ -87,4 +87,18 @@ def fit(self, completions, workdir=None, **kwargs):
 ```
 
 After you wrap your model code with the class, define the loaders, and define the methods, you're ready to run your model as an ML backend with Label Studio. See the [Quickstart](ml.html#Quickstart). 
+
+## Support interactive preannotations in your ML backend
+
+If you want to support interactive preannotations in your machine learning backend, refer to [this code example for substring matching](https://github.com/heartexlabs/label-studio-ml-backend/tree/master/label_studio_ml/examples/substring_matching).
+
+Do the following in your code:
+- Define an inference call with the **predict** method as outlined in the [inference section of this guide](ml_create.html#Inference-call).
+- Within that predict method, take the task data in the `tasks` parameter, containing details about the task that is being preannotated, and the context details in `kwargs['context']`, containing details about actions performed in Label Studio. 
+- With the task and context data, construct a prediction from the data received from Label Studio. 
+- Return a result in the Label Studio predictions format.
+
+Refer to the code example for more details. 
+
+
 

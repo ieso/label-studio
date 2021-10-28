@@ -1,4 +1,4 @@
-import { useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useState } from 'react';
 import { Button, Columns } from '../../../components';
 import { confirm, modal } from '../../../components/Modal/Modal';
 import { Spinner } from '../../../components/Spinner/Spinner';
@@ -13,9 +13,17 @@ export const StorageSet = ({title, target, rootClass, buttonLabel}) => {
   const [storages, setStorages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [storageTypes, setStorageTypes] = useState([]);
 
-  /**@type {import('react').RefObject<Form>} */
-  const formRef = useRef();
+  useEffect(() => {
+    api.callApi('storageTypes', {
+      params: {
+        target,
+      },
+    }).then(types => {
+      setStorageTypes(types);
+    });
+  }, []);
 
   const fetchStorages = useCallback(async () => {
     if (!project.id) {
@@ -30,6 +38,14 @@ export const StorageSet = ({title, target, rootClass, buttonLabel}) => {
         target,
       },
     });
+
+    const storageTypes = await api.callApi('storageTypes', {
+      params: {
+        target,
+      },
+    });
+
+    setStorageTypes(storageTypes);
 
     if (result !== null) {
       setStorages(result);
@@ -50,11 +66,11 @@ export const StorageSet = ({title, target, rootClass, buttonLabel}) => {
       style: { width: 760 },
       body: (
         <StorageForm
-          ref={formRef}
           target={target}
           storage={storage}
           project={project.id}
           rootClass={rootClass}
+          storageTypes={storageTypes}
           onSubmit={async () => {
             await fetchStorages();
             modalRef.close();
@@ -69,7 +85,7 @@ export const StorageSet = ({title, target, rootClass, buttonLabel}) => {
         </>
       ),
     });
-  }, [project, fetchStorages, target, formRef, rootClass]);
+  }, [project, fetchStorages, target, rootClass]);
 
   const onEditStorage = useCallback(async (storage) => {
     showStorageFormModal(storage);
@@ -118,6 +134,7 @@ export const StorageSet = ({title, target, rootClass, buttonLabel}) => {
           storage={storage}
           target={target}
           rootClass={rootClass}
+          storageTypes={storageTypes}
           onEditStorage={onEditStorage}
           onDeleteStorage={onDeleteStorage}
         />

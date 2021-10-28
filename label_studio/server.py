@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 
 
 LS_PATH = str(pathlib.Path(__file__).parent.absolute())
+DEFAULT_USERNAME = 'default_user@localhost'
 
 
 def _setup_env():
@@ -90,14 +91,33 @@ def _create_project(title, user, label_config=None, sampling=None, description=N
     return project
 
 
+def _get_user_info(username):
+    from users.models import User
+    from users.serializers import UserSerializer
+    if not username:
+        username = DEFAULT_USERNAME
+
+    user = User.objects.filter(email=username)
+    if not user.exists():
+        print({'status': 'error', 'message': f"user {username} doesn't exist"})
+        return
+
+    user = user.first()
+    user_data = UserSerializer(user).data
+    user_data['token'] = user.auth_token.key
+    user_data['status'] = 'ok'
+    print('=> User info:')
+    print(user_data)
+    return user_data
+
+
 def _create_user(input_args, config):
     from users.models import User
     from organizations.models import Organization
 
-    DEFAULT_USERNAME = 'default_user@localhost'
-
     username = input_args.username or config.get('username') or get_env('USERNAME')
     password = input_args.password or config.get('password') or get_env('PASSWORD')
+    token = input_args.user_token or config.get('user_token') or get_env('USER_TOKEN')
 
     if not username:
         user = User.objects.filter(email=DEFAULT_USERNAME).first()
@@ -105,29 +125,39 @@ def _create_user(input_args, config):
             if password and not user.check_password(password):
                 user.set_password(password)
                 user.save()
-                print('User password changed')
+                print(f'User {DEFAULT_USERNAME} password changed')
             return user
-        print('Please enter default user email, or press Enter to use "default_user@localhost"')
+        print(f'Please enter default user email, or press Enter to use {DEFAULT_USERNAME}')
         username = input('Email: ')
         if not username:
             username = DEFAULT_USERNAME
     if not password:
-        password = getpass.getpass('Default user password: ')
+        password = getpass.getpass(f'Default user password {DEFAULT_USERNAME}: ')
 
     try:
         user = User.objects.create_user(email=username, password=password)
         user.is_staff = True
         user.is_superuser = True
         user.save()
+
+        if token and len(token) > 5:
+            from rest_framework.authtoken.models import Token
+            Token.objects.filter(key=user.auth_token.key).update(key=token)
+        else:
+            print(f"Token {token} is not applied to user {DEFAULT_USERNAME} "
+                  f"because it's empty or len(token) < 5")
+
     except IntegrityError:
         print('User {} already exists'.format(username))
 
     user = User.objects.get(email=username)
     org = Organization.objects.first()
     if not org:
-        Organization.create_organization(created_by=user, title='Label Studio')
+        org = Organization.create_organization(created_by=user, title='Label Studio')
     else:
         org.add_user(user)
+    user.active_organization = org
+    user.save(update_fields=['active_organization'])
 
     return user
 
@@ -218,7 +248,7 @@ def _project_exists(project_name):
 
 
 def main():
-    input_args = parse_input_args()
+    input_args = parse_input_args(sys.argv[1:])
 
     # setup logging level
     if input_args.log_level:
@@ -258,6 +288,11 @@ def main():
         from label_studio import __version__
         print('\nLabel Studio version:', __version__, '\n')
         print(json.dumps(versions, indent=4))
+
+    # init
+    elif input_args.command == 'user' or getattr(input_args, 'user', None):
+        _get_user_info(input_args.username)
+        return
 
     # init
     elif input_args.command == 'init' or getattr(input_args, 'init', None):
@@ -317,7 +352,7 @@ def main():
     if input_args.command == 'start' or input_args.command is None:
         from label_studio.core.utils.common import start_browser
 
-        if get_env('USERNAME') and get_env('PASSWORD'):
+        if get_env('USERNAME') and get_env('PASSWORD') or input_args.username:
             _create_user(input_args, config)
 
         # ssl not supported from now
@@ -331,7 +366,12 @@ def main():
         # internal port and internal host for server start
         internal_host = input_args.internal_host or config.get('internal_host', '0.0.0.0')
         internal_port = input_args.port or get_env('PORT') or config.get('port', 8080)
-        internal_port = int(internal_port)
+        try:
+            internal_port = int(internal_port)
+        except ValueError as e:
+            logger.warning(f"Can't parse PORT '{internal_port}': {e}; default value 8080 will be used")
+            internal_port = 8080
+
         internal_port = _get_free_port(internal_port, input_args.debug)
 
         # save selected port to global settings

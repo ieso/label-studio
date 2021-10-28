@@ -1,9 +1,10 @@
 ---
-title: Export results from Label Studio
+title: Export annotations and data from Label Studio
+short: Export annotations
 type: guide
-order: 402
+order: 415
 meta_title: Export Annotations
-meta_description: Label Studio Documentation for exporting data labeling annotations for machine learning and data science projects.
+meta_description: Label Studio documentation for exporting data labeling annotations in multiple formats that you can use in machine learning models and data science projects.
 ---
 
 ## Export data from Label Studio
@@ -22,11 +23,11 @@ Label Studio supports many common and standard formats for exporting completed l
 
 ### JSON
 
-List of items in [raw JSON format](#Raw-JSON-format-of-completed-labeled-tasks) stored in one JSON file. Use to export both the data and the annotations for a dataset. 
+List of items in [raw JSON format](#Label-Studio-JSON-format-of-annotated-tasks) stored in one JSON file. Use to export both the data and the annotations for a dataset. 
 
 ### JSON_MIN
 
-List of items where only `"from_name", "to_name"` values from the [raw JSON format](#Raw-JSON-format-of-completed-labeled-tasks) are exported. Use to export only the annotations and the data for a dataset, and no Label-Studio-specific fields. 
+List of items where only `"from_name", "to_name"` values from the [raw JSON format](#Label-Studio-JSON-format-of-annotated-tasks) are exported. Use to export only the annotations and the data for a dataset, and no Label-Studio-specific fields. 
 
 ```json
 {
@@ -80,6 +81,9 @@ Export audio transcription labels for automatic speech recognition as the JSON m
 {“audio_filepath”: “/path/to/audio.wav”, “text”: “the transcription”, “offset”: 301.75, “duration”: 0.82, “utt”: “utterance_id”, “ctm_utt”: “en_4156”, “side”: “A”}
 ```
 
+### YOLO
+
+Export object detection annotations in the YOLOv3 and YOLOv4 format. You must have at least one `RectangleLabels` or similar object detection annotations present in your labeling configuration to use the YOLO export format.
 
 ## Label Studio JSON format of annotated tasks 
 
@@ -202,3 +206,6 @@ Review the full list of JSON properties in the [API documentation](api.html).
 
 
 <!-- md image_units.md -->
+
+
+<!-- md annotation_ids.md -->

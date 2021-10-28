@@ -43,7 +43,7 @@ setuptools.setup(
     include_package_data=True,
     classifiers=[
         'Programming Language :: Python :: 3',
-        'License :: OSI Approved :: MIT License',
+        'License :: OSI Approved :: Apache Software License',
         'Operating System :: OS Independent',
     ],
     install_requires=requirements,
@@ -53,5 +53,8 @@ setuptools.setup(
         'console_scripts': [
             'label-studio=label_studio.server:main',
         ],
+    },
+    extras_require={
+        'mysql': ['mysqlclient']
     }
 )

@@ -16,13 +16,19 @@ from django.template import loader
 from django.views.static import serve
 from django.http import JsonResponse
 from wsgiref.util import FileWrapper
+from rest_framework.views import APIView
+from drf_yasg.utils import swagger_auto_schema
 
 from core import utils
+from core.utils.io import find_file
 from core.utils.params import get_env
 from core.label_config import generate_time_series_json
 from core.utils.common import collect_versions
 
 logger = logging.getLogger(__name__)
+
+
+_PARAGRAPH_SAMPLE = None
 
 
 def main(request):
@@ -47,15 +53,16 @@ def version_page(request):
     # update latest version from pypi response
     # from label_studio.core.utils.common import check_for_the_latest_version
     # check_for_the_latest_version(print_message=False)
-
-    result = collect_versions(force=True)
-
-    # other settings from backend
-    if request.user.is_superuser:
-        result['settings'] = {key: str(getattr(settings, key)) for key in dir(settings) if not key.startswith('_')}
+    http_page = request.path == '/version/'
+    result = collect_versions(force=http_page)
 
     # html / json response
     if request.path == '/version/':
+        # other settings from backend
+        if request.user.is_superuser:
+            result['settings'] = {key: str(getattr(settings, key)) for key in dir(settings)
+                                  if not key.startswith('_') and not hasattr(getattr(settings, key), '__call__')}
+
         result = json.dumps(result, indent=2)
         result = result.replace('},', '},\n').replace('\\n', ' ').replace('\\r', '')
         return HttpResponse('<pre>' + result + '</pre>')
@@ -74,6 +81,16 @@ def health(request):
 def metrics(request):
     """ Empty page for metrics evaluation """
     return HttpResponse('')
+
+
+class TriggerAPIError(APIView):
+    """ 500 response for testing """
+    authentication_classes = ()
+    permission_classes = ()
+
+    @swagger_auto_schema(auto_schema=None)
+    def get(self, request):
+        raise Exception('test')
 
 
 def editor_files(request):
@@ -123,6 +140,24 @@ def samples_time_series(request):
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
     response['filename'] = filename
     return response
+
+
+def samples_paragraphs(request):
+    """ Generate paragraphs example for preview
+    """
+    global _PARAGRAPH_SAMPLE
+
+    if _PARAGRAPH_SAMPLE is None:
+        with open(find_file('paragraphs.json'), encoding='utf-8') as f:
+            _PARAGRAPH_SAMPLE = json.load(f)
+    name_key = request.GET.get('nameKey', 'author')
+    text_key = request.GET.get('textKey', 'text')
+
+    result = []
+    for line in _PARAGRAPH_SAMPLE:
+        result.append({name_key: line['author'], text_key: line['text']})
+
+    return HttpResponse(json.dumps(result), content_type='application/json')
 
 
 def localfiles_data(request):

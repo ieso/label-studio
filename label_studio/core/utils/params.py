@@ -12,15 +12,21 @@ def bool_from_request(params, key, default):
     value = params.get(key, default)
 
     if isinstance(value, str):
+        value = cast_bool_from_str(value)
+
+    return bool(int(value))
+
+
+def cast_bool_from_str(value):
+    if isinstance(value, str):
         if value.lower() in ['true', 'yes', 'on', '1']:
             value = True
         elif value.lower() in ['false', 'no', 'not', 'off', '0']:
             value = False
         else:
-            raise ValueError(f'Incorrect value in key "{key}" = "{value}". '
+            raise ValueError(f'Incorrect bool value "{value}". '
                              f'It should be one of [1, 0, true, false, yes, no]')
-
-    return bool(int(value))
+    return value
 
 
 def int_from_request(params, key, default):

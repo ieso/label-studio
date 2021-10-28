@@ -11,18 +11,25 @@ https://docs.djangoproject.com/en/3.1/ref/settings/
 """
 import os
 import re
+import logging
 
-from core.utils.io import get_data_dir
-from core.utils.params import get_bool_env, get_env
+# for printing messages before main logging config applied
+if not logging.getLogger().hasHandlers():
+    logging.basicConfig(level=logging.DEBUG, format='%(message)s')
+
+from label_studio.core.utils.io import get_data_dir
+from label_studio.core.utils.params import get_bool_env, get_env
+
+logger = logging.getLogger(__name__)
 
 # Hostname is used for proper path generation to the resources, pages, etc
 HOSTNAME = get_env('HOST', '')
 if HOSTNAME:
     if not HOSTNAME.startswith('http://') and not HOSTNAME.startswith('https://'):
-        print("! HOST variable found in environment, but it must start with http:// or https://, ignore it:", HOSTNAME)
+        logger.info("! HOST variable found in environment, but it must start with http:// or https://, ignore it: %s", HOSTNAME)
         HOSTNAME = ''
     else:
-        print("=> Hostname correctly is set to:", HOSTNAME)
+        logger.info("=> Hostname correctly is set to: %s", HOSTNAME)
         if HOSTNAME.endswith('/'):
             HOSTNAME = HOSTNAME[0:-1]
 
@@ -33,7 +40,7 @@ if HOSTNAME:
             match = pattern.match(HOSTNAME)
             FORCE_SCRIPT_NAME = match.group(3)
             if FORCE_SCRIPT_NAME:
-                print("=> Django URL prefix is set to:", FORCE_SCRIPT_NAME)
+                logger.info("=> Django URL prefix is set to: %s", FORCE_SCRIPT_NAME)
 
 INTERNAL_PORT = '8080'
 
@@ -42,6 +49,8 @@ SECRET_KEY = '$(fefwefwef13;LFK{P!)@#*!)kdsjfWF2l+i5e3t(8a1n'
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = get_bool_env('DEBUG', True)
+DEBUG_MODAL_EXCEPTIONS = get_bool_env('DEBUG_MODAL_EXCEPTIONS', True)
+
 
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -49,10 +58,11 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Base path for media root and other uploaded files
 BASE_DATA_DIR = get_env('BASE_DATA_DIR', get_data_dir())
 os.makedirs(BASE_DATA_DIR, exist_ok=True)
-print('=> Database and media directory:', BASE_DATA_DIR)
+logger.info('=> Database and media directory: %s', BASE_DATA_DIR)
 
 # Databases
 # https://docs.djangoproject.com/en/2.1/ref/settings/#databases
+DJANGO_DB_MYSQL = 'mysql'
 DJANGO_DB_SQLITE = 'sqlite'
 DJANGO_DB = 'default'
 DATABASE_NAME_DEFAULT = os.path.join(BASE_DATA_DIR, 'label_studio.sqlite3')
@@ -65,6 +75,14 @@ DATABASES_ALL = {
         'NAME': get_env('POSTGRE_NAME', 'postgres'),
         'HOST': get_env('POSTGRE_HOST', 'localhost'),
         'PORT': int(get_env('POSTGRE_PORT', '5432')),
+    },
+    DJANGO_DB_MYSQL: {
+        'ENGINE': 'django.db.backends.mysql',
+        'USER': get_env('MYSQL_USER', 'root'),
+        'PASSWORD': get_env('MYSQL_PASSWORD', ''),
+        'NAME': get_env('MYSQL_NAME', 'labelstudio'),
+        'HOST': get_env('MYSQL_HOST', 'localhost'),
+        'PORT': int(get_env('MYSQL_PORT', '3306')),
     },
     DJANGO_DB_SQLITE: {
         'ENGINE': 'django.db.backends.sqlite3',
@@ -93,16 +111,16 @@ LOGGING = {
     },
     'handlers': {
         'console_raw': {
-            'level': get_env('LOG_LEVEL', 'DEBUG'),
+            'level': get_env('LOG_LEVEL', 'WARNING'),
             'class': 'logging.StreamHandler',
         },
         'console': {
-            'level': get_env('LOG_LEVEL', 'DEBUG'),
+            'level': get_env('LOG_LEVEL', 'WARNING'),
             'class': 'logging.StreamHandler',
             'formatter': 'standard'
         },
         'rq_console': {
-            'level': 'DEBUG',
+            'level': 'WARNING',
             'class': 'rq.utils.ColorizingStreamHandler',
             'formatter': 'rq_console',
             'exclude': ['%(asctime)s'],
@@ -110,9 +128,27 @@ LOGGING = {
     },
     'root': {
         'handlers': ['console'],
-        'level': get_env('LOG_LEVEL', 'DEBUG'),
+        'level': get_env('LOG_LEVEL', 'WARNING'),
     }
 }
+
+if get_bool_env('GOOGLE_LOGGING_ENABLED', False):
+    logging.info('Google Cloud Logging handler is enabled.')
+    try:
+        import google.cloud.logging
+        from google.auth.exceptions import GoogleAuthError
+
+        client = google.cloud.logging.Client()
+        client.setup_logging()
+
+        LOGGING['handlers']['google_cloud_logging'] = {
+            'level': get_env('LOG_LEVEL', 'WARNING'),
+            'class': 'google.cloud.logging.handlers.CloudLoggingHandler',
+            'client': client
+        }
+        LOGGING['root']['handlers'].append('google_cloud_logging')
+    except GoogleAuthError as e:
+        logger.exception('Google Cloud Logging handler could not be setup.')
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -140,12 +176,14 @@ INSTALLED_APPS = [
     'users',
     'organizations',
     'data_import',
+    'data_export',
 
     'projects',
     'tasks',
     'data_manager',
     'io_storages',
-    'ml'
+    'ml',
+    'webhooks',
 ]
 
 MIDDLEWARE = [
@@ -160,7 +198,6 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'core.middleware.CommonMiddlewareAppendSlashWithoutRedirect',  # instead of 'CommonMiddleware'
     'core.middleware.CommonMiddleware',
-    'core.middleware.DRFResponseFormatter',
     'django_user_agents.middleware.UserAgentMiddleware',
     'core.middleware.SetSessionUIDMiddleware',
     'core.middleware.ContextLogMiddleware',
@@ -255,7 +292,9 @@ SWAGGER_SETTINGS = {
     'SECURITY_DEFINITIONS': {
         'token': {
             'type': 'token',
-            'url': '/business/account/#/token'
+            'name': 'Token',
+            'in': 'header',
+            'url': '/user/account'
         }
     },
     'APIS_SORTER': 'alpha',
@@ -264,7 +303,13 @@ SWAGGER_SETTINGS = {
     'OPERATIONS_SORTER': 'alpha'
 }
 
-SENTRY_FE = None
+SENTRY_DSN = get_env('SENTRY_DSN', None)
+SENTRY_RATE = float(get_env('SENTRY_RATE', 0.25))
+SENTRY_ENVIRONMENT = get_env('SENTRY_ENVIRONMENT', 'stage.opensource')
+SENTRY_REDIS_ENABLED = False
+FRONTEND_SENTRY_DSN = get_env('FRONTEND_SENTRY_DSN', None)
+FRONTEND_SENTRY_RATE = get_env('FRONTEND_SENTRY_RATE', 0.1)
+FRONTEND_SENTRY_ENVIRONMENT = get_env('FRONTEND_SENTRY_ENVIRONMENT', 'stage.opensource')
 
 ROOT_URLCONF = 'core.urls'
 WSGI_APPLICATION = 'core.wsgi.application'
@@ -283,7 +328,7 @@ USE_TZ = True
 STATIC_URL = '/static/'
 # if FORCE_SCRIPT_NAME:
 #    STATIC_URL = FORCE_SCRIPT_NAME + STATIC_URL
-print(f'=> Static URL is set to: {STATIC_URL}')
+logger.info(f'=> Static URL is set to: {STATIC_URL}')
 
 STATIC_ROOT = os.path.join(BASE_DIR, 'static_build')
 STATICFILES_DIRS = [os.path.join(BASE_DIR, 'static')]
@@ -300,6 +345,7 @@ CSRF_COOKIE_HTTPONLY = bool(int(get_env('CSRF_COOKIE_HTTPONLY', SESSION_COOKIE_S
 
 # user media files
 MEDIA_ROOT = os.path.join(BASE_DATA_DIR, 'media')
+os.makedirs(MEDIA_ROOT, exist_ok=True)
 MEDIA_URL = '/data/'
 UPLOAD_DIR = 'upload'
 AVATAR_PATH = 'avatars'
@@ -307,20 +353,26 @@ AVATAR_PATH = 'avatars'
 # project exports
 EXPORT_DIR = os.path.join(BASE_DATA_DIR, 'export')
 EXPORT_URL_ROOT = '/export/'
+# old export dir
 os.makedirs(EXPORT_DIR, exist_ok=True)
+# dir for delayed export
+DELAYED_EXPORT_DIR = 'export'
+os.makedirs(os.path.join(BASE_DATA_DIR, MEDIA_ROOT, DELAYED_EXPORT_DIR), exist_ok=True)
 
 # file / task size limits
-DATA_UPLOAD_MAX_MEMORY_SIZE = int(get_env('DATA_UPLOAD_MAX_MEMORY_SIZE', 50 * 1024 * 1024))
-TASKS_MAX_NUMBER = 250000
+DATA_UPLOAD_MAX_MEMORY_SIZE = int(get_env('DATA_UPLOAD_MAX_MEMORY_SIZE', 250 * 1024 * 1024))
+TASKS_MAX_NUMBER = 1000000
 TASKS_MAX_FILE_SIZE = DATA_UPLOAD_MAX_MEMORY_SIZE
 
 TASK_LOCK_TTL = int(get_env('TASK_LOCK_TTL')) if get_env('TASK_LOCK_TTL') else None
 TASK_LOCK_DEFAULT_TTL = int(get_env('TASK_LOCK_DEFAULT_TTL', 3600))
+TASK_LOCK_MIN_TTL = int(get_env('TASK_LOCK_MIN_TTL', 120))
 
 # Email backend
-FROM_EMAIL = 'Label Studio <hello@labelstud.io>'
-EMAIL_BACKEND = 'django.core.mail.backends.dummy.EmailBackend'
+FROM_EMAIL = get_env('FROM_EMAIL', 'Label Studio <hello@labelstud.io>')
+EMAIL_BACKEND = get_env('EMAIL_BACKEND', 'django.core.mail.backends.dummy.EmailBackend')
 
+ENABLE_LOCAL_FILES_STORAGE = get_bool_env('ENABLE_LOCAL_FILES_STORAGE', default=True)
 LOCAL_FILES_SERVING_ENABLED = get_bool_env('LOCAL_FILES_SERVING_ENABLED', default=False)
 
 """ React Libraries: do not forget to change this dir in /etc/nginx/nginx.conf """
@@ -342,19 +394,29 @@ DATA_UNDEFINED_NAME = '$undefined$'
 LICENSE = {}
 VERSIONS = {}
 VERSION_EDITION = 'Community Edition'
+LATEST_VERSION_CHECK = True
+VERSIONS_CHECK_TIME = 0
+ALLOW_ORGANIZATION_WEBHOOKS = get_bool_env('ALLOW_ORGANIZATION_WEBHOOKS', False)
+CONVERTER_DOWNLOAD_RESOURCES = get_bool_env('CONVERTER_DOWNLOAD_RESOURCES', True)
+EXPERIMENTAL_FEATURES = get_bool_env('EXPERIMENTAL_FEATURES', False)
 
 CREATE_ORGANIZATION = 'organizations.functions.create_organization'
 GET_OBJECT_WITH_CHECK_AND_LOG = 'core.utils.get_object.get_object_with_check_and_log'
 SAVE_USER = 'users.functions.save_user'
 USER_SERIALIZER = 'users.serializers.BaseUserSerializer'
+DATA_MANAGER_GET_ALL_COLUMNS = 'data_manager.functions.get_all_columns'
 DATA_MANAGER_ANNOTATIONS_MAP = {}
 DATA_MANAGER_ACTIONS = {}
+DATA_MANAGER_CUSTOM_FILTER_EXPRESSIONS = ''
 USER_LOGIN_FORM = 'users.forms.LoginForm'
 PROJECT_MIXIN = 'core.mixins.DummyModelMixin'
 TASK_MIXIN = 'core.mixins.DummyModelMixin'
 ANNOTATION_MIXIN = 'core.mixins.DummyModelMixin'
 ORGANIZATION_MIXIN = 'core.mixins.DummyModelMixin'
 USER_MIXIN = 'users.mixins.UserMixin'
+GET_STORAGE_LIST = 'io_storages.functions.get_storage_list'
+
+STORAGE_ANNOTATION_SERIALIZER = 'io_storages.serializers.StorageAnnotationSerializer'
 
 
 def project_delete(project):
@@ -365,17 +427,17 @@ def user_auth(user_model, email, password):
     return None
 
 
-def collect_versions(**kwargs):
+def collect_versions_dummy(**kwargs):
     return {}
 
 
 PROJECT_DELETE = project_delete
 USER_AUTH = user_auth
-COLLECT_VERSIONS = collect_versions
+COLLECT_VERSIONS = collect_versions_dummy
+
+WEBHOOK_TIMEOUT = float(get_env('WEBHOOK_TIMEOUT', 1.0))
 
 # fix a problem with Windows mimetypes for JS and PNG
 import mimetypes
 mimetypes.add_type("application/javascript", ".js", True)
 mimetypes.add_type("image/png", ".png", True)
-
-print()  # just empty line
